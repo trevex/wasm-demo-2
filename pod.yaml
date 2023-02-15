@@ -1,0 +1,13 @@
+# - containerd needs to use crun (with wasmedge)
+# - allowlist wasm-annotations, so they can be propagated to the OCI spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-wasm-workload
+  namespace: mynamespace
+  annotations: # optional if image is properly annotated
+    module.wasm.image/variant: compat
+spec:
+  containers:
+  - name: wasm-container
+    image: myrepo/mywasmimage:latest

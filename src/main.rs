@@ -1,79 +1,51 @@
-use axum::{
-    http::StatusCode,
-    routing::{get, post},
-    Json, Router,
-};
-use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+
+use hyper::server::conn::Http;
+use hyper::service::service_fn;
+use hyper::{Body, Method, Request, Response, StatusCode};
+use tokio::net::TcpListener;
+
+/// This is our service handler. It receives a Request, routes on its
+/// path, and returns a Future of a Response.
+async fn echo(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+    match (req.method(), req.uri().path()) {
+        // Serve some instructions at /
+        (&Method::GET, "/") => Ok(Response::new(Body::from(
+            "Try POSTing data to /echo such as: `curl localhost:8080/echo -XPOST -d 'hello world'`",
+        ))),
+
+        // Simply echo the body back to the client.
+        (&Method::POST, "/echo") => Ok(Response::new(req.into_body())),
+
+        (&Method::POST, "/echo/reversed") => {
+            let whole_body = hyper::body::to_bytes(req.into_body()).await?;
+
+            let reversed_body = whole_body.iter().rev().cloned().collect::<Vec<u8>>();
+            Ok(Response::new(Body::from(reversed_body)))
+        }
+
+        // Return the 404 Not Found for other routes.
+        _ => {
+            let mut not_found = Response::default();
+            *not_found.status_mut() = StatusCode::NOT_FOUND;
+            Ok(not_found)
+        }
+    }
+}
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
-    // initialize tracing
-    tracing_subscriber::fmt::init();
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
 
-    // build our application with a route
-    let app = Router::new()
-        // `GET /` goes to `root`
-        .route("/", get(root))
-        // `POST /users` goes to `create_user`
-        .route("/users", post(create_user));
+    let listener = TcpListener::bind(addr).await?;
+    println!("Listening on http://{}", addr);
+    loop {
+        let (stream, _) = listener.accept().await?;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        use std::net::SocketAddr;
-
-        let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-        tracing::debug!("listening on {}", addr);
-        axum::Server::bind(&addr)
-            .serve(app.into_make_service())
-            .await?;
+        tokio::task::spawn(async move {
+            if let Err(err) = Http::new().serve_connection(stream, service_fn(echo)).await {
+                println!("Error serving connection: {:?}", err);
+            }
+        });
     }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use std::os::wasi::io::FromRawFd;
-
-        tracing_subscriber::fmt::init();
-        let std_listener = unsafe { std::net::TcpListener::from_raw_fd(3) };
-        std_listener.set_nonblocking(true).unwrap();
-        axum::Server::from_tcp(std_listener)
-            .unwrap()
-            .serve(app.into_make_service())
-            .await?;
-    }
-
-    Ok(())
-}
-
-// basic handler that responds with a static string
-async fn root() -> &'static str {
-    "Try POSTing data to /users such as: `curl localhost:8080/users -XPOST -H 'Content-Type: application/json' -d '{ \"username\": \"foo\" }'`"
-}
-
-async fn create_user(
-    // this argument tells axum to parse the request body
-    // as JSON into a `CreateUser` type
-    Json(payload): Json<CreateUser>,
-) -> (StatusCode, Json<User>) {
-    // insert your application logic here
-    let user = User {
-        id: 1337,
-        username: payload.username,
-    };
-
-    // this will be converted into a JSON response
-    // with a status code of `201 Created`
-    (StatusCode::CREATED, Json(user))
-}
-
-// the input to our `create_user` handler
-#[derive(Deserialize)]
-struct CreateUser {
-    username: String,
-}
-
-// the output to our `create_user` handler
-#[derive(Serialize)]
-struct User {
-    id: u64,
-    username: String,
 }

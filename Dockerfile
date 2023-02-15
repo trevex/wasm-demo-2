@@ -8,4 +8,4 @@ RUN cargo build --target wasm32-wasi --release
 
 FROM scratch
 ENTRYPOINT [ "wasm-demo.wasm" ]
-COPY --link --from=build /wasm-demo/target/wasm32-wasi/release/wasm-demo.wasm wasm-demo.wasm
+COPY --from=build /wasm-demo/target/wasm32-wasi/release/wasm-demo.wasm wasm-demo.wasm

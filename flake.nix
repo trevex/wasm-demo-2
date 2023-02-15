@@ -33,9 +33,24 @@
             rust-analyzer
             buildah
             podman
+            wasmedge
+            (crun.overrideAttrs (prev: {
+              configureFlags = [ "--with-wasmedge" ];
+              buildInputs = prev.buildInputs ++ [ wasmedge ];
+              postFixup =
+                let
+                  libPath = lib.makeLibraryPath [ wasmedge systemd libseccomp libcap criu yajl ];
+                in
+                ''
+                  patchelf \
+                    --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" \
+                    --set-rpath "${libPath}" \
+                    $out/bin/crun
+                '';
+            }))
           ];
 
-          LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
+          # LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
         };
       }
     );
